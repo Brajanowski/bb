@@ -4,6 +4,8 @@
 #include <windowsx.h>
 #include <process.h>
 
+#include "bb_tool.h"
+
 // keys & buttons
 enum {
   bb_ButtonLeft       = 0x01,
@@ -199,6 +201,7 @@ int bb_CloseWindow(bb_window *Window);
 void bb_UpdateWindow(bb_window *Window);
 void bb_SetWindowCursorPosition(bb_window *Window, int X, int Y);
 void bb_SetWindowTitle(bb_window *Window, const char *Title);
+bb_vec2 bb_GetWindowSize(bb_window *Window);
 
 // events
 bool bb_PullEvent(bb_event *Event);
@@ -323,9 +326,8 @@ static LRESULT CALLBACK __bb_Win32HandleEvents(HWND Handle, UINT Message, WPARAM
     int Height = (int)(Rect.bottom - Rect.top);
 
     if (WParam != SIZE_MINIMIZED && !__bb_IsResizing && 
-        Width != __bb_LastWindowWidth && 
-        Height != __bb_LastWindowHeight) {
-
+        (Width != __bb_LastWindowWidth || 
+        Height != __bb_LastWindowHeight)) {
       Event.Type = bb_EventResized;
       Event.Window.Width = Width;
       Event.Window.Height = Height;
@@ -347,7 +349,7 @@ static LRESULT CALLBACK __bb_Win32HandleEvents(HWND Handle, UINT Message, WPARAM
     int Width = (int)(Rect.right - Rect.left);
     int Height = (int)(Rect.bottom - Rect.top);
 
-    if (Width != __bb_LastWindowWidth && 
+    if (Width != __bb_LastWindowWidth || 
         Height != __bb_LastWindowHeight) {
       Event.Type = bb_EventResized;
       Event.Window.Width = Width;
@@ -430,6 +432,13 @@ bb_SetWindowCursorPosition(bb_window *Window, int X, int Y) {
 void
 bb_SetWindowTitle(bb_window *Window, const char *Title) {
   SetWindowText(Window->Win32Handle, Title);
+}
+
+bb_vec2
+bb_GetWindowSize(bb_window *Window) {
+  RECT Rect;
+  GetClientRect(Window->Win32Handle, &Rect);
+  return bb_vec2((float)(Rect.right - Rect.left), (float)(Rect.bottom - Rect.top));
 }
 
 // events

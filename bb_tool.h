@@ -140,6 +140,7 @@ bb_vec3 bb_Cross(bb_vec3 A, bb_vec3 B);
 bb_vec3 bb_Rotate(bb_vec3 V, bb_quaternion Q);
 
 bb_quaternion bb_InitQuaternion(float Angle, bb_vec3 Axis);
+bb_quaternion bb_EulerAnglesToQuaternion(float X, float Y, float Z);
 float bb_Length(bb_quaternion Value);
 bb_quaternion bb_Normalized(bb_quaternion Value);
 bb_quaternion bb_Conjugate(bb_quaternion Value);
@@ -152,8 +153,10 @@ bb_vec3 bb_Left(bb_quaternion Value);
 
 bb_mat4 bb_Orthographic(float Left, float Right, float Bottom, float Top, float NearZ, float FarZ);
 bb_mat4 bb_Perspective(float Fov, float Aspect, float NearZ, float FarZ);
+bb_mat4 bb_Translate(float X, float Y, float Z);
 bb_mat4 bb_Translate(bb_vec3 Value);
 bb_mat4 bb_Scale(bb_vec3 Value);
+bb_mat4 bb_Scale(float X, float Y, float Z);
 bb_mat4 bb_Rotate(bb_vec3 N, bb_vec3 V, bb_vec3 U);
 bb_mat4 bb_Rotate(bb_quaternion Quaternion);
 
@@ -300,6 +303,14 @@ bb_InitQuaternion(float Angle, bb_vec3 Axis) {
   return bb_quaternion(Axis.X * SinHalfAngle, Axis.Y * SinHalfAngle, Axis.Z * SinHalfAngle, CosHalfAngle);
 }
 
+bb_quaternion
+bb_EulerAnglesToQuaternion(float X, float Y, float Z) {
+  bb_quaternion Result = bb_InitQuaternion(X, bb_vec3(1, 0, 0)) * 
+                         bb_InitQuaternion(Y, bb_vec3(0, 1, 0)) * 
+                         bb_InitQuaternion(Z, bb_vec3(0, 0, 1));
+  return Result;
+}
+
 float
 bb_Length(bb_quaternion Value) {
   return sqrtf(Value.X * Value.X + Value.Y * Value.Y + Value.Z * Value.Z + Value.W * Value.W);
@@ -377,21 +388,31 @@ bb_Perspective(float Fov, float Aspect, float NearZ, float FarZ) {
 }
 
 bb_mat4
-bb_Translate(bb_vec3 Value) {
+bb_Translate(float X, float Y, float Z) {
   bb_mat4 Result(1.0f);
-  Result[0][3] = Value.X;
-  Result[1][3] = Value.Y;
-  Result[2][3] = Value.Z;
+  Result[0][3] = X;
+  Result[1][3] = Y;
+  Result[2][3] = Z;
+  return Result;
+}
+
+bb_mat4
+bb_Translate(bb_vec3 Value) {
+  return bb_Translate(Value.X, Value.Y, Value.Z);
+}
+
+bb_mat4
+bb_Scale(float X, float Y, float Z) {
+  bb_mat4 Result(1.0f);
+  Result[0][0] = X;
+  Result[1][1] = Y;
+  Result[2][2] = Z;
   return Result;
 }
 
 bb_mat4
 bb_Scale(bb_vec3 Value) {
-  bb_mat4 Result(1.0f);
-  Result[0][0] = Value.X;
-  Result[1][1] = Value.Y;
-  Result[2][2] = Value.Z;
-  return Result;
+  return bb_Scale(Value.X, Value.Y, Value.Z);
 }
 
 bb_mat4
