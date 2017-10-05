@@ -503,16 +503,19 @@ bb_OpenGLSwapBuffers(bb_opengl_context *Context) {
 }
 
 // memory
+//#include <stdio.h>
 void *
 bb_AllocateMemory(int Size) {
-  return VirtualAlloc(0, Size, MEM_COMMIT, PAGE_READWRITE);
+  return HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, Size);
+  //return malloc(Size);
+  //return VirtualAlloc(0, Size, MEM_COMMIT, PAGE_READWRITE);
 }
 
 void
 bb_FreeMemory(void *Memory) {
-#if defined (BB_PLATFORM_WIN32)
-  VirtualFree(Memory, 0, MEM_RELEASE);
-#endif
+  HeapFree(GetProcessHeap(), 0, Memory);
+  //free(Memory);
+  //VirtualFree(Memory, 0, MEM_RELEASE);
 }
 
 // threads

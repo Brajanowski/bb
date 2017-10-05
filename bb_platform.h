@@ -92,7 +92,7 @@ main(int ArgumentsNumber, char **Arguments) {
   
   bool IsRunning = true;
   
-  bb_OpenWindow(&bb_PlatformState.Window, "Voxel Engine", 0, 0, 1600, 900, bb_FlagDefault | bb_FlagResizable);
+  bb_OpenWindow(&bb_PlatformState.Window, "Voxel Engine", 0, 0, 1024, 576, bb_FlagDefault | bb_FlagResizable);
   bb_CreateOpenGLContext(&bb_PlatformState.Window, &OpenGLContext);
 
   // gl3w
