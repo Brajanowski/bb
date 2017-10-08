@@ -253,8 +253,10 @@ static int __bb_LastWindowHeight = 0;
 
 static void
 __bb_AddEvent(bb_event Event) {
-  if (__bb_EventsNumber >= __bb_MaxEventsQueue)
+  if (__bb_EventsNumber >= __bb_MaxEventsQueue) {
     __bb_EventsNumber = 0;
+    OutputDebugStringA("bb_platform: reseting events number due to array size\n");
+  }
   __bb_EventsQueue[__bb_EventsNumber++] = Event;
 }
 
@@ -504,18 +506,36 @@ bb_OpenGLSwapBuffers(bb_opengl_context *Context) {
 
 // memory
 //#include <stdio.h>
+static bb_mutex __bb_MemoryMutex;
+
 void *
 bb_AllocateMemory(int Size) {
-  return HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, Size);
+  if (__bb_MemoryMutex.MutexHandle == 0) {
+    bb_CreateMutex(&__bb_MemoryMutex);
+  }
+
+  void *Mem = 0;
+
+  bb_Lock(&__bb_MemoryMutex);
+  Mem = VirtualAlloc(0, Size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+  //Mem = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, Size);
+  bb_Unlock(&__bb_MemoryMutex);
+
+  bb_Assert(Mem != 0);
+
+  return Mem;
+  //return HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, Size);
   //return malloc(Size);
   //return VirtualAlloc(0, Size, MEM_COMMIT, PAGE_READWRITE);
 }
 
 void
 bb_FreeMemory(void *Memory) {
-  HeapFree(GetProcessHeap(), 0, Memory);
   //free(Memory);
-  //VirtualFree(Memory, 0, MEM_RELEASE);
+  bb_Lock(&__bb_MemoryMutex);
+  VirtualFree(Memory, 0, MEM_RELEASE);
+  //HeapFree(GetProcessHeap(), 0, Memory);
+  bb_Unlock(&__bb_MemoryMutex);
 }
 
 // threads
@@ -604,6 +624,8 @@ __bb_ThreadPoolWorker(void *Data) {
     if (__bb_GetNextTask(ThreadPool, &Task)) {
       Task.Function(Task.Data);
     }
+
+    bb_Sleep(1);
   }
 }
 
