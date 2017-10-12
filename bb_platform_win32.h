@@ -4,7 +4,6 @@
 #include <windowsx.h>
 #include <process.h>
 
-#include "bb_tool.h"
 
 // keys & buttons
 enum {
@@ -136,7 +135,9 @@ enum {
   bb_EventLostFocus,
   bb_EventResized,
   bb_EventMinimized,
-  bb_EventMaximized
+  bb_EventMaximized,
+  bb_EventMouseWheel,
+  bb_EventChar
 };
 
 // window flags
@@ -154,6 +155,8 @@ struct bb_event {
   union {
     struct { int X, Y; } Mouse;
     struct { int Width, Height; } Window;
+    struct { int X, Y; } Wheel;
+    struct { char Character; };
     int Key;
     int Button;
   };
@@ -201,7 +204,11 @@ int bb_CloseWindow(bb_window *Window);
 void bb_UpdateWindow(bb_window *Window);
 void bb_SetWindowCursorPosition(bb_window *Window, int X, int Y);
 void bb_SetWindowTitle(bb_window *Window, const char *Title);
-bb_vec2 bb_GetWindowSize(bb_window *Window);
+void bb_GetWindowSize(bb_window *Window, int *Width, int *Height);
+void bb_ShowCursor(bool Show);
+bool bb_GetAsyncKeyState(int Key);
+void bb_GetScreenMousePosition(int *X, int *Y);
+void bb_GetClientMousePosition(bb_window *Window, int *X, int *Y);
 
 // events
 bool bb_PullEvent(bb_event *Event);
@@ -237,6 +244,8 @@ int bb_PushTaskToThreadPool(bb_thread_pool *ThreadPool, void(*Function)(void *),
 
 // system
 void bb_Sleep(int Ms);
+void bb_SetTextClipboard(const char *Data, unsigned int Length);
+char *bb_GetTextClipboard();
 
 // ----------------------------------------------------------------------------
 // -----------------------------IMPLEMENTATION---------------------------------
@@ -246,7 +255,7 @@ void bb_Sleep(int Ms);
 // events queue
 #define __bb_MaxEventsQueue 0xFF
 static bb_event __bb_EventsQueue[__bb_MaxEventsQueue];
-static int __bb_EventsNumber = 0;
+static unsigned int __bb_EventsNumber = 0;
 static bool __bb_IsResizing = false;
 static int __bb_LastWindowWidth = 0;
 static int __bb_LastWindowHeight = 0;
@@ -255,116 +264,182 @@ static void
 __bb_AddEvent(bb_event Event) {
   if (__bb_EventsNumber >= __bb_MaxEventsQueue) {
     __bb_EventsNumber = 0;
-    OutputDebugStringA("bb_platform: reseting events number due to array size\n");
   }
   __bb_EventsQueue[__bb_EventsNumber++] = Event;
 }
 
 // win32
 static LRESULT CALLBACK __bb_Win32HandleEvents(HWND Handle, UINT Message, WPARAM WParam, LPARAM LParam) {
+  LRESULT Result = 0;
+
   bb_event Event;
-  if (Message == WM_CLOSE || Message == WM_QUIT) {
-    Event.Type = bb_EventQuit;
-    __bb_AddEvent(Event);
-    return 0;
-  } else if (Message == WM_KEYDOWN) {
-    Event.Type = bb_EventKeyDown;
-    Event.Key = (int)WParam;
-    __bb_AddEvent(Event);
-    return 0;
-  } else if (Message == WM_KEYUP) {
-    Event.Type = bb_EventKeyUp;
-    Event.Key = (int)WParam;
-    __bb_AddEvent(Event);
-    return 0;
-  } else if (Message == WM_LBUTTONDOWN) {
-    Event.Type = bb_EventButtonDown;
-    Event.Button = bb_ButtonLeft;
-    __bb_AddEvent(Event);
-    return 0;
-  } else if (Message == WM_LBUTTONUP) {
-    Event.Type = bb_EventButtonUp;
-    Event.Button = bb_ButtonLeft;
-    __bb_AddEvent(Event);
-    return 0;
-  } else if (Message == WM_RBUTTONDOWN) {
-    Event.Type = bb_EventButtonDown;
-    Event.Button = bb_ButtonRight;
-    __bb_AddEvent(Event);
-    return 0;
-  } else if (Message == WM_RBUTTONUP) {
-    Event.Type = bb_EventButtonUp;
-    Event.Button = bb_ButtonRight;
-    __bb_AddEvent(Event);
-    return 0;
-  } else if (Message == WM_MBUTTONDOWN) {
-    Event.Type = bb_EventButtonDown;
-    Event.Button = bb_ButtonMiddle;
-    __bb_AddEvent(Event);
-    return 0;
-  } else if (Message == WM_MBUTTONUP) {
-    Event.Type = bb_EventButtonUp;
-    Event.Button = bb_ButtonMiddle;
-    __bb_AddEvent(Event);
-    return 0;
-  } else if (Message == WM_MOUSEMOVE) {
-    Event.Type = bb_EventMouseMove;
-    Event.Mouse.X = GET_X_LPARAM(LParam); 
-    Event.Mouse.Y = GET_Y_LPARAM(LParam);
-    __bb_AddEvent(Event);
-    return 0;
-  } else if (Message == WM_SETFOCUS) {
-    Event.Type = bb_EventSetFocus;
-    __bb_AddEvent(Event);
-    return 0;
-  } else if (Message == WM_KILLFOCUS) {
-    Event.Type = bb_EventLostFocus;
-    __bb_AddEvent(Event);
-    return 0;
-  } else if (Message == WM_SIZE) {
-    RECT Rect;
-    GetClientRect(Handle, &Rect);
-    int Width = (int)(Rect.right - Rect.left);
-    int Height = (int)(Rect.bottom - Rect.top);
-
-    if (WParam != SIZE_MINIMIZED && !__bb_IsResizing && 
-        (Width != __bb_LastWindowWidth || 
-        Height != __bb_LastWindowHeight)) {
-      Event.Type = bb_EventResized;
-      Event.Window.Width = Width;
-      Event.Window.Height = Height;
-
-      __bb_LastWindowWidth = Width;
-      __bb_LastWindowHeight = Height;
-
+  ZeroMemory(&Event, sizeof(bb_event));
+  
+  switch (Message) {
+    case WM_QUIT:
+    case WM_DESTROY: {
+      Event.Type = bb_EventQuit;
       __bb_AddEvent(Event);
+    } break;
+
+    case WM_SYSKEYDOWN:
+    case WM_KEYDOWN:
+    case WM_SYSKEYUP:
+    case WM_KEYUP: {
+      unsigned int VKCode = (unsigned int)WParam;
+      bool WasDown = ((LParam & (1 << 30)) != 0);
+      bool IsDown = ((LParam & (1 << 31)) == 0);
+
+      if (WasDown != IsDown) {
+        if (IsDown) {
+          Event.Type = bb_EventKeyDown;
+        } else {
+          Event.Type = bb_EventKeyUp;
+        }
+
+        Event.Key = VKCode;
+
+        __bb_AddEvent(Event);
+      }
+      break;
     }
-    return 0;
-  } else if (Message == WM_ENTERSIZEMOVE) {
-    __bb_IsResizing = true;
-    return 0;
-  } else if (Message == WM_EXITSIZEMOVE) {
-    __bb_IsResizing = false;
 
-    RECT Rect;
-    GetClientRect(Handle, &Rect);
-    int Width = (int)(Rect.right - Rect.left);
-    int Height = (int)(Rect.bottom - Rect.top);
-
-    if (Width != __bb_LastWindowWidth || 
-        Height != __bb_LastWindowHeight) {
-      Event.Type = bb_EventResized;
-      Event.Window.Width = Width;
-      Event.Window.Height = Height;
-
-      __bb_LastWindowWidth = Width;
-      __bb_LastWindowHeight = Height;
-
+    /*case WM_SYSKEYDOWN:
+    case WM_KEYDOWN: {
+      Event.Type = bb_EventKeyDown;
+      Event.Key = (int)WParam;
       __bb_AddEvent(Event);
+    } break;
+
+    case WM_SYSKEYUP:
+    case WM_KEYUP: {
+      Event.Type = bb_EventKeyUp;
+      Event.Key = (int)WParam;
+      __bb_AddEvent(Event);
+    } break;*/
+
+    case WM_LBUTTONDOWN: {
+      Event.Type = bb_EventButtonDown;
+      Event.Button = bb_ButtonLeft;
+      __bb_AddEvent(Event);
+    } break;
+
+    case WM_LBUTTONUP: {
+      Event.Type = bb_EventButtonUp;
+      Event.Button = bb_ButtonLeft;
+      __bb_AddEvent(Event);
+    } break;
+
+    case WM_RBUTTONDOWN: {
+      Event.Type = bb_EventButtonDown;
+      Event.Button = bb_ButtonRight;
+      __bb_AddEvent(Event);
+    } break;
+
+    case WM_RBUTTONUP: {
+      Event.Type = bb_EventButtonUp;
+      Event.Button = bb_ButtonRight;
+      __bb_AddEvent(Event);
+    } break;
+
+    case WM_MBUTTONDOWN: {
+      Event.Type = bb_EventButtonDown;
+      Event.Button = bb_ButtonMiddle;
+      __bb_AddEvent(Event);
+    } break;
+
+    case WM_MBUTTONUP: {
+      Event.Type = bb_EventButtonUp;
+      Event.Button = bb_ButtonMiddle;
+      __bb_AddEvent(Event);
+    } break;
+
+    case WM_MOUSEMOVE: {
+      Event.Type = bb_EventMouseMove;
+      Event.Mouse.X = GET_X_LPARAM(LParam); 
+      Event.Mouse.Y = GET_Y_LPARAM(LParam);
+      __bb_AddEvent(Event);
+    } break;
+
+    case WM_MOUSEWHEEL: {
+      Event.Type = bb_EventMouseWheel;
+      Event.Wheel.X = GET_X_LPARAM(LParam); 
+      Event.Wheel.Y = GET_Y_LPARAM(LParam);
+      __bb_AddEvent(Event);
+    } break;
+
+    case WM_CHAR: {
+      Event.Type = bb_EventChar;
+      Event.Character = (char)WParam;
+      __bb_AddEvent(Event);
+    } break;
+
+    case WM_SETFOCUS: {
+      Event.Type = bb_EventSetFocus;
+      __bb_AddEvent(Event);
+      break;
     }
-    return 0;
+
+    case WM_KILLFOCUS: {
+      Event.Type = bb_EventLostFocus;
+      __bb_AddEvent(Event);
+      break;
+    }
+
+    case WM_SIZE: {
+      RECT Rect;
+      GetClientRect(Handle, &Rect);
+      int Width = (int)(Rect.right - Rect.left);
+      int Height = (int)(Rect.bottom - Rect.top);
+
+      if (WParam != SIZE_MINIMIZED && !__bb_IsResizing && 
+          (Width != __bb_LastWindowWidth || 
+          Height != __bb_LastWindowHeight)) {
+        Event.Type = bb_EventResized;
+        Event.Window.Width = Width;
+        Event.Window.Height = Height;
+
+        __bb_LastWindowWidth = Width;
+        __bb_LastWindowHeight = Height;
+
+        __bb_AddEvent(Event);
+      }
+      break;
+    }
+
+    case WM_ENTERSIZEMOVE: {
+      __bb_IsResizing = true;
+      break;
+    }
+
+    case WM_EXITSIZEMOVE: {
+      __bb_IsResizing = false;
+
+      RECT Rect;
+      GetClientRect(Handle, &Rect);
+      int Width = (int)(Rect.right - Rect.left);
+      int Height = (int)(Rect.bottom - Rect.top);
+
+      if (Width != __bb_LastWindowWidth || 
+          Height != __bb_LastWindowHeight) {
+        Event.Type = bb_EventResized;
+        Event.Window.Width = Width;
+        Event.Window.Height = Height;
+
+        __bb_LastWindowWidth = Width;
+        __bb_LastWindowHeight = Height;
+
+        __bb_AddEvent(Event);
+      }
+      break;
+    }
+
+    default: {
+      Result = DefWindowProcW(Handle, Message, WParam, LParam);
+      break;
+    }
   }
-  return DefWindowProcW(Handle, Message, WParam, LParam);
+  return Result;
 }
 
 // window
@@ -400,6 +475,7 @@ bb_OpenWindow(bb_window *Window, const char *Title, int PositionX, int PositionY
                     NULL, NULL, GetModuleHandle(NULL), NULL);
 
   ShowWindow(Window->Win32Handle, SW_SHOW);
+  UpdateWindow(Window->Win32Handle);
   return 0;
 }
 
@@ -413,12 +489,44 @@ bb_CloseWindow(bb_window *Window) {
 void
 bb_UpdateWindow(bb_window *Window) {
   MSG Message;
-  while (PeekMessageW(&Message, NULL, 0, 0, PM_NOREMOVE)) {
-    if (!GetMessage(&Message, NULL, 0, 0)) {
+  while (PeekMessage(&Message, NULL, 0, 0, PM_REMOVE)) {
+    /*if (!GetMessage(&Message, NULL, 0, 0)) {
       break;
-    }
-    DispatchMessage(&Message);
+    }*/
+
+    /*bb_event Event;
+    switch (Message.message) {
+      case WM_SYSKEYDOWN:
+      case WM_KEYDOWN:
+      case WM_SYSKEYUP:
+      case WM_KEYUP: {
+        unsigned int VKCode = (unsigned int)Message.wParam;
+        bool WasDown = ((Message.lParam & (1 << 30)) != 0);
+        bool IsDown = ((Message.lParam & (1 << 31)) == 0);
+
+        if (WasDown != IsDown) {
+          if (IsDown) {
+            Event.Type = bb_EventKeyDown;
+          } else {
+            Event.Type = bb_EventKeyUp;
+          }
+
+          Event.Key = VKCode;
+
+          __bb_AddEvent(Event);
+        }
+        break;
+      }
+
+      default: {
+        TranslateMessage(&Message);
+        DispatchMessage(&Message);
+        break;
+      }
+    }*/
+
     TranslateMessage(&Message);
+    DispatchMessage(&Message);
   }
 }
 
@@ -436,11 +544,42 @@ bb_SetWindowTitle(bb_window *Window, const char *Title) {
   SetWindowText(Window->Win32Handle, Title);
 }
 
-bb_vec2
-bb_GetWindowSize(bb_window *Window) {
+void
+bb_GetWindowSize(bb_window *Window, int *Width, int *Height) {
   RECT Rect;
   GetClientRect(Window->Win32Handle, &Rect);
-  return bb_vec2((float)(Rect.right - Rect.left), (float)(Rect.bottom - Rect.top));
+  *Width = Rect.right - Rect.left;
+  *Height = Rect.bottom - Rect.top;
+}
+
+void
+bb_ShowCursor(bool Show) {
+  ShowCursor(Show);
+}
+
+bool
+bb_GetAsyncKeyState(int Key) {
+  return (GetAsyncKeyState(Key) != 0);
+}
+
+void
+bb_GetScreenMousePosition(int *X, int *Y) {
+  POINT Point;
+  GetCursorPos(&Point);
+
+  *X = Point.x;
+  *Y = Point.y;
+}
+
+void
+bb_GetClientMousePosition(bb_window *Window, int *X, int *Y) {
+  POINT Point;
+  GetCursorPos(&Point);
+
+  ScreenToClient(Window->Win32Handle, &Point);
+
+  *X = Point.x;
+  *Y = Point.y;
 }
 
 // events
@@ -688,6 +827,42 @@ bb_PushTaskToThreadPool(bb_thread_pool *ThreadPool, void(*Function)(void *), voi
 void
 bb_Sleep(int Ms) {
   Sleep(Ms);
+}
+
+void
+bb_SetTextClipboard(const char *Data, unsigned int Length) {
+  HGLOBAL Memory = GlobalAlloc(GMEM_MOVEABLE, Length + 1);
+  char *Dest = (char *)GlobalLock(Memory);
+  for (unsigned int Index = 0; Index < Length; ++Index) {
+    Dest[Index] = Data[Index];
+  }
+  Dest[Length] = '\0';
+  GlobalUnlock(Memory);
+
+  OpenClipboard(NULL);
+  EmptyClipboard();
+  SetClipboardData(CF_TEXT, Memory);
+  CloseClipboard();
+}
+
+#include "Strsafe.h"
+
+char *
+bb_GetTextClipboard() {
+  OpenClipboard(NULL);
+  HANDLE Clipboard = GetClipboardData(CF_TEXT);  
+  if (Clipboard != NULL) {
+    char *ClipboardPtrData = (char *)GlobalLock(Clipboard);
+    unsigned int ClipboardLength = lstrlen(ClipboardPtrData);
+    char *Result = (char *)bb_AllocateMemory(sizeof(char) * ClipboardLength);
+
+    StringCchCopyA(Result, ClipboardLength, ClipboardPtrData);
+
+    GlobalUnlock(ClipboardPtrData);
+    CloseClipboard();
+    return Result;
+  }
+  CloseClipboard();
 }
 
 #endif

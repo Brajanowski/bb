@@ -1,14 +1,22 @@
 // platform abstraction layer written by Brajan Bartoszewicz
 //
-//
 // NOTES:
 //  - use #define BB_PLATFORM_IMPLEMENTATION before including this file to include implementation
 //  - Win32:
 //     - libs required: opengl32.lib (if using opengl)
+//  You can define these functions to work with them in your game
+//    BB_PLATFORM_INIT - calls after creating window and opengl context
+//    BB_PLATFORM_LOOP
+//    BB_PLATFORM_CONFIG - calls on changing resolution etc
+//    BB_PLATFORM_SHUTDOWN - calls just before exiting an app
+//    BB_PLATFORM_PROCESSEVENT - it takes 1 argument which is pointer to bb_event structure, and it's called in
+//                               event pulling loop
 // TODO:
 //  - threads
 //    - thread pool too
 //  - mouse wheel
+// KNOWN BUGS:
+//  - sometimes when you press some keys while moving mouse, it doesnt update key state to down
 
 #ifndef BB_PLATFORM_H_
 
@@ -19,6 +27,8 @@
 #ifdef BB_PLATFORM_WIN32
 #include "bb_platform_win32.h"
 #endif
+
+#include "bb_tool.h"
 
 #ifndef BB_TOOL_H_
 #error "Include bb_tool library!"
@@ -52,12 +62,6 @@ struct bb_platform_state {
 // ----------------------------------------------------------------------------
 #ifdef BB_PLATFORM_IMPLEMENTATION
 
-// NOTE(Brajan): you can define these functions to work with them in your game
-// BB_PLATFORM_INIT - calls after creating window and opengl context
-// BB_PLATFORM_LOOP
-// BB_PLATFORM_CONFIG - calls on changing resolution etc
-// BB_PLATFORM_SHUTDOWN - calls just before exiting an app
-
 #include "gl3w.h"
 
 #ifdef BB_PLATFORM_INIT
@@ -74,6 +78,10 @@ void BB_PLATFORM_CONFIG ();
 
 #ifdef BB_PLATFORM_SHUTDOWN
 void BB_PLATFORM_SHUTDOWN ();
+#endif
+
+#ifdef BB_PLATFORM_PROCESSEVENT
+void BB_PLATFORM_PROCESSEVENT(bb_event *Event);
 #endif
 
 static bb_platform_state bb_PlatformState;
@@ -128,34 +136,54 @@ main(int ArgumentsNumber, char **Arguments) {
     // handle events
     bb_event Event;
     if (bb_PullEvent(&Event)) {
-      if (Event.Type == bb_EventQuit) {
-        IsRunning = false;
-      } else if (Event.Type == bb_EventKeyDown) {
-        bb_PlatformState.InputState.Keys[Event.Key] = true;
-        bb_PlatformState.InputState.KeysUp[Event.Key] = true;
-      } else if (Event.Type == bb_EventKeyUp) {
-        bb_PlatformState.InputState.Keys[Event.Key] = false;
-        bb_PlatformState.InputState.KeysDown[Event.Key] = true;
-      } else if (Event.Type == bb_EventButtonDown) {
-        bb_PlatformState.InputState.Buttons[Event.Button] = true;
-        bb_PlatformState.InputState.ButtonsDown[Event.Button] = true;
-      } else if (Event.Type == bb_EventButtonUp) {
-        bb_PlatformState.InputState.Buttons[Event.Button] = false;
-        bb_PlatformState.InputState.ButtonsUp[Event.Button] = true;
-      } else if (Event.Type == bb_EventMouseMove) {
-        bb_PlatformState.InputState.MouseX = Event.Mouse.X;
-        bb_PlatformState.InputState.MouseY = Event.Mouse.Y;
+      switch (Event.Type) {
+        case bb_EventQuit: {
+          IsRunning = false;
+        } break;
 
-        bb_PlatformState.InputState.MouseMoveX = LastMousePositionX - Event.Mouse.X;
-        bb_PlatformState.InputState.MouseMoveY = LastMousePositionY - Event.Mouse.Y;
+        case bb_EventKeyDown: {
+          bb_PlatformState.InputState.Keys[Event.Key] = true;
+          bb_PlatformState.InputState.KeysDown[Event.Key] = true;
+        } break;
 
-        LastMousePositionX = Event.Mouse.X;
-        LastMousePositionY = Event.Mouse.Y;
-      } else if (Event.Type == bb_EventResized) {
+        case bb_EventKeyUp: {
+          bb_PlatformState.InputState.Keys[Event.Key] = false;
+          bb_PlatformState.InputState.KeysUp[Event.Key] = true;
+        } break;
+
+        case bb_EventButtonDown: {
+          bb_PlatformState.InputState.Buttons[Event.Button] = true;
+          bb_PlatformState.InputState.ButtonsDown[Event.Button] = true;
+        } break;
+
+        case bb_EventButtonUp: {
+          bb_PlatformState.InputState.Buttons[Event.Button] = false;
+          bb_PlatformState.InputState.ButtonsUp[Event.Button] = true;
+        } break;
+
+        case bb_EventMouseMove: {
+          bb_PlatformState.InputState.MouseX = Event.Mouse.X;
+          bb_PlatformState.InputState.MouseY = Event.Mouse.Y;
+
+          bb_PlatformState.InputState.MouseMoveX = LastMousePositionX - Event.Mouse.X;
+          bb_PlatformState.InputState.MouseMoveY = LastMousePositionY - Event.Mouse.Y;
+
+          LastMousePositionX = Event.Mouse.X;
+          LastMousePositionY = Event.Mouse.Y;
+        } break;
+
+        case bb_EventResized: {
 #ifdef BB_PLATFORM_CONFIG
-        BB_PLATFORM_CONFIG();
+          BB_PLATFORM_CONFIG();
 #endif
+        } break;
+
+        default: {
+        } break;
       }
+#ifdef BB_PLATFORM_PROCESSEVENT
+      BB_PLATFORM_PROCESSEVENT(&Event);
+#endif
     }
 
     unsigned int StartTime = bb_GetTicks();

@@ -2,15 +2,25 @@
 
 #include <math.h>
 
+// macros
 #ifndef bb_Assert
 #define bb_Assert(Expression) if (!(Expression)) *(int *)0 = 0;
 #endif
+
+#ifndef bb_ArrayCount
+#define bb_ArrayCount(Array) (sizeof(Array) / sizeof(Array[0]))
+#endif
+
+#define bb_Kilobytes(Value) (Value * 1024LL)
+#define bb_Megabytes(Value) (bb_Kilobytes(Value) * 1024LL)
+#define bb_Gigabytes(Value) (bb_Megabytes(Value) * 1024LL)
+#define bb_Terabytes(Value) (bb_Gigabytes(Value) * 1024LL)
 
 // c string functions
 int bb_StringCompare(const char *A, const char *B);
 int bb_StringCompareLength(const char *A, const char *B, unsigned int Length);
 char *bb_StringCopy(char *Destination, const char *Source);
-int bb_StringLength(char *String);
+int bb_StringLength(const char *String);
 
 // memory operations
 void bb_ZeroMemory(void *Buffer, unsigned int Size);
@@ -159,16 +169,6 @@ bb_mat4 bb_Scale(bb_vec3 Value);
 bb_mat4 bb_Scale(float X, float Y, float Z);
 bb_mat4 bb_Rotate(bb_vec3 N, bb_vec3 V, bb_vec3 U);
 bb_mat4 bb_Rotate(bb_quaternion Quaternion);
-
-// macros
-#ifndef bb_ArrayCount
-#define bb_ArrayCount(Array) (sizeof(Array) / sizeof(Array[0]))
-#endif
-
-#define bb_Kilobytes(Value) (Value * 1024)
-#define bb_Megabytes(Value) (bb_Kilobytes(Value) * 1024)
-#define bb_Gigabytes(Value) (bb_Megabytes(Value) * 1024)
-#define bb_Terabytes(Value) (bb_Gigabytes(Value) * 1024)
 
 // ----------------------------------------------------------------------------
 // -----------------------------IMPLEMENTATION---------------------------------
