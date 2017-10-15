@@ -4,7 +4,6 @@
 #include <windowsx.h>
 #include <process.h>
 
-
 // keys & buttons
 enum {
   bb_ButtonLeft       = 0x01,
@@ -254,18 +253,29 @@ char *bb_GetTextClipboard();
 
 // events queue
 #define __bb_MaxEventsQueue 0xFF
-static bb_event __bb_EventsQueue[__bb_MaxEventsQueue];
-static unsigned int __bb_EventsNumber = 0;
+struct __bb_events_queue{
+  int Front;
+  int Rear;
+  int EventCount;
+  bb_event Array[__bb_MaxEventsQueue];
+};
+static __bb_events_queue __bb_EventsQueue = {
+  0, -1, 0, { }
+};
+
 static bool __bb_IsResizing = false;
 static int __bb_LastWindowWidth = 0;
 static int __bb_LastWindowHeight = 0;
 
 static void
-__bb_AddEvent(bb_event Event) {
-  if (__bb_EventsNumber >= __bb_MaxEventsQueue) {
-    __bb_EventsNumber = 0;
+__bb_InsertEvent(bb_event Event) {
+  if (__bb_EventsQueue.EventCount < __bb_MaxEventsQueue) {
+    if (__bb_EventsQueue.Rear == __bb_MaxEventsQueue - 1) {
+      __bb_EventsQueue.Rear = -1;
+    }
+    __bb_EventsQueue.Array[++__bb_EventsQueue.Rear] = Event;
+    ++__bb_EventsQueue.EventCount;
   }
-  __bb_EventsQueue[__bb_EventsNumber++] = Event;
 }
 
 // win32
@@ -279,7 +289,7 @@ static LRESULT CALLBACK __bb_Win32HandleEvents(HWND Handle, UINT Message, WPARAM
     case WM_QUIT:
     case WM_DESTROY: {
       Event.Type = bb_EventQuit;
-      __bb_AddEvent(Event);
+      __bb_InsertEvent(Event);
     } break;
 
     case WM_SYSKEYDOWN:
@@ -299,90 +309,76 @@ static LRESULT CALLBACK __bb_Win32HandleEvents(HWND Handle, UINT Message, WPARAM
 
         Event.Key = VKCode;
 
-        __bb_AddEvent(Event);
+        __bb_InsertEvent(Event);
       }
       break;
     }
 
-    /*case WM_SYSKEYDOWN:
-    case WM_KEYDOWN: {
-      Event.Type = bb_EventKeyDown;
-      Event.Key = (int)WParam;
-      __bb_AddEvent(Event);
-    } break;
-
-    case WM_SYSKEYUP:
-    case WM_KEYUP: {
-      Event.Type = bb_EventKeyUp;
-      Event.Key = (int)WParam;
-      __bb_AddEvent(Event);
-    } break;*/
-
     case WM_LBUTTONDOWN: {
       Event.Type = bb_EventButtonDown;
       Event.Button = bb_ButtonLeft;
-      __bb_AddEvent(Event);
+      __bb_InsertEvent(Event);
     } break;
 
     case WM_LBUTTONUP: {
       Event.Type = bb_EventButtonUp;
       Event.Button = bb_ButtonLeft;
-      __bb_AddEvent(Event);
+      __bb_InsertEvent(Event);
     } break;
 
     case WM_RBUTTONDOWN: {
       Event.Type = bb_EventButtonDown;
       Event.Button = bb_ButtonRight;
-      __bb_AddEvent(Event);
+      __bb_InsertEvent(Event);
     } break;
 
     case WM_RBUTTONUP: {
       Event.Type = bb_EventButtonUp;
       Event.Button = bb_ButtonRight;
-      __bb_AddEvent(Event);
+      __bb_InsertEvent(Event);
     } break;
 
     case WM_MBUTTONDOWN: {
       Event.Type = bb_EventButtonDown;
       Event.Button = bb_ButtonMiddle;
-      __bb_AddEvent(Event);
+      __bb_InsertEvent(Event);
     } break;
 
     case WM_MBUTTONUP: {
       Event.Type = bb_EventButtonUp;
       Event.Button = bb_ButtonMiddle;
-      __bb_AddEvent(Event);
+      __bb_InsertEvent(Event);
     } break;
 
     case WM_MOUSEMOVE: {
       Event.Type = bb_EventMouseMove;
       Event.Mouse.X = GET_X_LPARAM(LParam); 
       Event.Mouse.Y = GET_Y_LPARAM(LParam);
-      __bb_AddEvent(Event);
+      __bb_InsertEvent(Event);
     } break;
 
     case WM_MOUSEWHEEL: {
       Event.Type = bb_EventMouseWheel;
       Event.Wheel.X = GET_X_LPARAM(LParam); 
       Event.Wheel.Y = GET_Y_LPARAM(LParam);
-      __bb_AddEvent(Event);
+      __bb_InsertEvent(Event);
     } break;
 
     case WM_CHAR: {
       Event.Type = bb_EventChar;
       Event.Character = (char)WParam;
-      __bb_AddEvent(Event);
+      __bb_InsertEvent(Event);
     } break;
 
     case WM_SETFOCUS: {
       Event.Type = bb_EventSetFocus;
-      __bb_AddEvent(Event);
+      __bb_InsertEvent(Event);
       break;
     }
 
     case WM_KILLFOCUS: {
       Event.Type = bb_EventLostFocus;
-      __bb_AddEvent(Event);
+      __bb_InsertEvent(Event);
       break;
     }
 
@@ -402,7 +398,7 @@ static LRESULT CALLBACK __bb_Win32HandleEvents(HWND Handle, UINT Message, WPARAM
         __bb_LastWindowWidth = Width;
         __bb_LastWindowHeight = Height;
 
-        __bb_AddEvent(Event);
+        __bb_InsertEvent(Event);
       }
       break;
     }
@@ -429,7 +425,7 @@ static LRESULT CALLBACK __bb_Win32HandleEvents(HWND Handle, UINT Message, WPARAM
         __bb_LastWindowWidth = Width;
         __bb_LastWindowHeight = Height;
 
-        __bb_AddEvent(Event);
+        __bb_InsertEvent(Event);
       }
       break;
     }
@@ -490,43 +486,8 @@ void
 bb_UpdateWindow(bb_window *Window) {
   MSG Message;
   while (PeekMessage(&Message, NULL, 0, 0, PM_REMOVE)) {
-    /*if (!GetMessage(&Message, NULL, 0, 0)) {
-      break;
-    }*/
-
-    /*bb_event Event;
-    switch (Message.message) {
-      case WM_SYSKEYDOWN:
-      case WM_KEYDOWN:
-      case WM_SYSKEYUP:
-      case WM_KEYUP: {
-        unsigned int VKCode = (unsigned int)Message.wParam;
-        bool WasDown = ((Message.lParam & (1 << 30)) != 0);
-        bool IsDown = ((Message.lParam & (1 << 31)) == 0);
-
-        if (WasDown != IsDown) {
-          if (IsDown) {
-            Event.Type = bb_EventKeyDown;
-          } else {
-            Event.Type = bb_EventKeyUp;
-          }
-
-          Event.Key = VKCode;
-
-          __bb_AddEvent(Event);
-        }
-        break;
-      }
-
-      default: {
-        TranslateMessage(&Message);
-        DispatchMessage(&Message);
-        break;
-      }
-    }*/
-
     TranslateMessage(&Message);
-    DispatchMessage(&Message);
+    DispatchMessageA(&Message);
   }
 }
 
@@ -585,9 +546,17 @@ bb_GetClientMousePosition(bb_window *Window, int *X, int *Y) {
 // events
 bool
 bb_PullEvent(bb_event *Event) {
-  if (__bb_EventsNumber == 0)
+  if (__bb_EventsQueue.EventCount == 0) {
     return false;
-  *Event = __bb_EventsQueue[--__bb_EventsNumber];
+  }
+
+  *Event = __bb_EventsQueue.Array[__bb_EventsQueue.Front++];
+
+  if (__bb_EventsQueue.Front == __bb_MaxEventsQueue) {
+    __bb_EventsQueue.Front = 0;
+  }
+
+  __bb_EventsQueue.EventCount--;
   return true;
 }
 
@@ -791,6 +760,8 @@ bb_CreateThreadPool(bb_thread_pool *ThreadPool, int NumWorkers, int MaxTasks) {
 
 void
 bb_DestroyThreadPool(bb_thread_pool *ThreadPool) {
+  if (ThreadPool == 0)
+    return;
   for (int Index = 0; Index < ThreadPool->NumWorkers; ++Index) {
     bb_DestroyThread(&ThreadPool->Workers[Index]);
   }
