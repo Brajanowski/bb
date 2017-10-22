@@ -486,6 +486,81 @@ void
 bb_UpdateWindow(bb_window *Window) {
   MSG Message;
   while (PeekMessage(&Message, NULL, 0, 0, PM_REMOVE)) {
+    /*bb_event Event = { 0 };
+
+    switch (Message.message) {
+      case WM_SYSKEYDOWN:
+      case WM_KEYDOWN:
+      case WM_SYSKEYUP:
+      case WM_KEYUP: {
+        
+        unsigned int VKCode = (unsigned int)Message.wParam;
+        bool WasDown = ((Message.lParam & (1 << 30)) != 0);
+        bool IsDown = ((Message.lParam & (1 << 31)) == 0);
+
+        if (WasDown != IsDown) {
+          if (IsDown) {
+            Event.Type = bb_EventKeyDown;
+          } else {
+            Event.Type = bb_EventKeyUp;
+          }
+
+          Event.Key = VKCode;
+
+          __bb_InsertEvent(Event);
+        }
+        break;
+      }
+
+      case WM_LBUTTONDOWN: {
+        Event.Type = bb_EventButtonDown;
+        Event.Button = bb_ButtonLeft;
+        __bb_InsertEvent(Event);
+      } break;
+
+      case WM_LBUTTONUP: {
+        Event.Type = bb_EventButtonUp;
+        Event.Button = bb_ButtonLeft;
+        __bb_InsertEvent(Event);
+      } break;
+
+      case WM_RBUTTONDOWN: {
+        Event.Type = bb_EventButtonDown;
+        Event.Button = bb_ButtonRight;
+        __bb_InsertEvent(Event);
+      } break;
+
+      case WM_RBUTTONUP: {
+        Event.Type = bb_EventButtonUp;
+        Event.Button = bb_ButtonRight;
+        __bb_InsertEvent(Event);
+      } break;
+
+      case WM_MBUTTONDOWN: {
+        Event.Type = bb_EventButtonDown;
+        Event.Button = bb_ButtonMiddle;
+        __bb_InsertEvent(Event);
+      } break;
+
+      case WM_MBUTTONUP: {
+        Event.Type = bb_EventButtonUp;
+        Event.Button = bb_ButtonMiddle;
+        __bb_InsertEvent(Event);
+      } break;
+
+      case WM_MOUSEMOVE: {
+        Event.Type = bb_EventMouseMove;
+        Event.Mouse.X = GET_X_LPARAM(Message.lParam); 
+        Event.Mouse.Y = GET_Y_LPARAM(Message.lParam);
+        __bb_InsertEvent(Event);
+      } break;     
+      
+      default: {
+        TranslateMessage(&Message);
+        DispatchMessageA(&Message);
+      } break;
+    }*/
+    
     TranslateMessage(&Message);
     DispatchMessageA(&Message);
   }
